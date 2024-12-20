@@ -215,3 +215,4 @@ pyrightconfig.json
 models/
 run.sh
 screenlog*
+_cache
