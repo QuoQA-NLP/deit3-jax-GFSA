@@ -214,4 +214,4 @@ pyrightconfig.json
 *.pth
 models/
 run.sh
-*.log
+screenlog*
