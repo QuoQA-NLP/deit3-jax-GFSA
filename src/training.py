@@ -160,6 +160,7 @@ def create_train_state(args: argparse.Namespace) -> TrainState:
         dropout=args.dropout,
         droppath=args.droppath,
         grad_ckpt=args.grad_ckpt,
+        gfsa_k=args.gfsa_k
     )
     module = TrainModule(
         model=model,

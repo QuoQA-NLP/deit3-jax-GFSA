@@ -46,6 +46,7 @@ class ViTBase:
     dropout: float = 0.0
     droppath: float = 0.0
     grad_ckpt: bool = False
+    gfsa_k: int = 0
 
     @property
     def kwargs(self) -> dict[str, Any]:
@@ -91,6 +92,57 @@ class PatchEmbed(ViTBase, nn.Module):
             x = jnp.concatenate((cls_token, x), axis=1)
         return x
 
+class GFSA(nn.Module):
+    """ GFSA Attention Filter: https://openreview.net/pdf?id=ffNrpcBpi6 """
+    fixed_params: bool = False  # Set to False to make them learnable
+    K: int = 4  # Default order; Reference: https://github.com/jeongwhanchoi/GFSA/blob/51385659a68e2f621061eb8951586cc63ad6c7aa/Image/gfsa.py#L47-L53
+
+    @nn.compact
+    def __call__(self, att: jnp.ndarray) -> jnp.ndarray:
+        """
+        - Pseudocode Reference: https://github.com/jeongwhanchoi/GFSA?tab=readme-ov-file#implementation-example-with-the-pseudocode
+        Graph Filter-based Self-Attention (GFSA) in JAX/Flax.
+
+        Args:
+            att: original self-attention matrix of shape [batch, h, n, n]
+            K: order of high-order term (provided in the module constructor)
+
+        Returns:
+            gf_att: GFSA attention matrix of shape [batch, h, n, n]
+        """
+        # Extract shapes
+        B, h, n, _ = att.shape
+        
+        # Define or initialize weights
+        # Option 1: Fixed weights (e.g., w_0=0, w_1=1, w_K=0)
+        # Option 2: Learnable parameters
+        if self.fixed_params:
+            w_0 = jnp.zeros((h,))
+            w_1 = jnp.ones((h,))
+            w_K = jnp.zeros((h,))
+        else:
+            w_0 = self.param('w_0', nn.initializers.zeros, (h,))
+            w_1 = self.param('w_1', nn.initializers.ones, (h,))
+            w_K = self.param('w_K', nn.initializers.zeros, (h,))
+
+        # Identity matrix for each head and batch
+        # Shape: [1, 1, n, n] will broadcast over batch and heads
+        I = jnp.eye(n)[None, None, ...]
+
+        # Compute high-order term using a Taylor approximation:
+        # att_K = att + (K-1) * ((att @ att) - att)
+        att_att = jnp.matmul(att, att)  # shape: [batch, h, n, n]
+        att_K = att + (self.K - 1) * (att_att - att)
+
+        # Combine terms with weights
+        # We broadcast weights along batch and spatial dimensions:
+        # w_0: [h] -> [1, h, 1, 1]
+        # Similarly for w_1 and w_K.
+        gf_att = (w_0[None, :, None, None] * I) + \
+                 (w_1[None, :, None, None] * att) + \
+                 (w_K[None, :, None, None] * att_K)
+        
+        return gf_att
 
 class Attention(ViTBase, nn.Module):
     def setup(self):
@@ -98,11 +150,14 @@ class Attention(ViTBase, nn.Module):
         self.wk = DenseGeneral((self.heads, self.head_dim))
         self.wv = DenseGeneral((self.heads, self.head_dim))
         self.wo = DenseGeneral(self.dim, axis=(-2, -1))
+        self.gfsa = GFSA(K=self.gfsa_k)
         self.drop = nn.Dropout(self.dropout)
 
     def __call__(self, x: Array, det: bool = True) -> Array:
         z = jnp.einsum("bqhd,bkhd->bhqk", self.wq(x) / self.head_dim**0.5, self.wk(x))
-        z = jnp.einsum("bhqk,bkhd->bqhd", self.drop(nn.softmax(z), det), self.wv(x))
+        z = nn.softmax(z)
+        z = self.gfsa(z) if self.gfsa_k > 0 else z
+        z = jnp.einsum("bhqk,bkhd->bqhd", self.drop(z, det), self.wv(x))
         return self.drop(self.wo(z), det)
 
 
