@@ -156,7 +156,8 @@ class Attention(ViTBase, nn.Module):
     def __call__(self, x: Array, det: bool = True) -> Array:
         z = jnp.einsum("bqhd,bkhd->bhqk", self.wq(x) / self.head_dim**0.5, self.wk(x))
         z = nn.softmax(z)
-        z = self.gfsa(z) if self.gfsa_k > 0 else z
+        if self.gfsa_k > 0:
+            z = self.gfsa(z)
         z = jnp.einsum("bhqk,bkhd->bqhd", self.drop(z, det), self.wv(x))
         return self.drop(self.wo(z), det)
 
