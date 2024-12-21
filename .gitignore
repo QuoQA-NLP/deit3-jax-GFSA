@@ -216,3 +216,4 @@ models/
 run.sh
 screenlog*
 _cache
+wandb
