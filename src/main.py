@@ -123,6 +123,7 @@ if __name__ == "__main__":
     parser.add_argument("--droppath", type=float, default=0.1)
     parser.add_argument("--grad-ckpt", action="store_true", default=False)
     parser.add_argument("--gfsa-k", type=int, default=0) # 0 for default run, 1 or more for GFSA Attention Filter: https://openreview.net/pdf?id=ffNrpcBpi6
+    parser.add_argument("--filter-init", type=str, default="101") # 0 for default run, 1 or more for GFSA Attention Filter: https://openreview.net/pdf?id=ffNrpcBpi6
 
     parser.add_argument("--init-seed", type=int, default=random.randint(0, 1000000))
     parser.add_argument("--mixup-seed", type=int, default=random.randint(0, 1000000))

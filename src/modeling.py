@@ -47,6 +47,7 @@ class ViTBase:
     droppath: float = 0.0
     grad_ckpt: bool = False
     gfsa_k: int = 0
+    filter_init: str = "101"
 
     @property
     def kwargs(self) -> dict[str, Any]:
@@ -96,6 +97,7 @@ class GFSA(nn.Module):
     """ GFSA Attention Filter: https://openreview.net/pdf?id=ffNrpcBpi6 """
     fixed_params: bool = False  # Set to False to make them learnable
     K: int = 4  # Default order; Reference: https://github.com/jeongwhanchoi/GFSA/blob/51385659a68e2f621061eb8951586cc63ad6c7aa/Image/gfsa.py#L47-L53
+    filter_init: str = "101" # in order of W_0, W_1, W_K
 
     @nn.compact
     def __call__(self, att: jnp.ndarray) -> jnp.ndarray:
@@ -121,9 +123,22 @@ class GFSA(nn.Module):
             w_1 = jnp.ones((h,))
             w_K = jnp.zeros((h,))
         else:
-            w_0 = self.param('w_0', nn.initializers.zeros, (h,))
-            w_1 = self.param('w_1', nn.initializers.ones, (h,))
-            w_K = self.param('w_K', nn.initializers.zeros, (h,))
+            for idx, f_init in enumerate(self.filter_init):
+                if idx == 0:
+                    if f_init == "0":
+                        w_0 = self.param('w_0', nn.initializers.zeros, (h,))
+                    elif f_init == "1":
+                        w_0 = self.param('w_0', nn.initializers.ones, (h,))
+                elif idx == 1:
+                    if f_init == "0":
+                        w_1 = self.param('w_1', nn.initializers.zeros, (h,))
+                    elif f_init == "1":
+                        w_1 = self.param('w_1', nn.initializers.ones, (h,))
+                elif idx == 2:
+                    if f_init == "0":
+                        w_K = self.param('w_K', nn.initializers.zeros, (h,))
+                    elif f_init == "1":
+                        w_K = self.param('w_K', nn.initializers.ones, (h,))
 
         # Identity matrix for each head and batch
         # Shape: [1, 1, n, n] will broadcast over batch and heads
@@ -150,7 +165,7 @@ class Attention(ViTBase, nn.Module):
         self.wk = DenseGeneral((self.heads, self.head_dim))
         self.wv = DenseGeneral((self.heads, self.head_dim))
         self.wo = DenseGeneral(self.dim, axis=(-2, -1))
-        self.gfsa = GFSA(K=self.gfsa_k)
+        self.gfsa = GFSA(K=self.gfsa_k, filter_init=self.filter_init)
         self.drop = nn.Dropout(self.dropout)
 
     def __call__(self, x: Array, det: bool = True) -> Array:
